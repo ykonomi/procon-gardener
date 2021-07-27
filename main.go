@@ -56,6 +56,7 @@ func isFileExist(path string) bool {
 
 type Service struct {
 	RepositoryPath string `json:"repository_path"`
+	DirectoryPath  string `json:"directory_path"`
 	KeyFileName    string `json:"key_file_name"`
 	UserID         string `json:"user_id"`
 	UserEmail      string `json:"user_email"`
@@ -385,8 +386,9 @@ func archiveCmd() {
 
 	//skip the already archived code
 	archivedKeys := map[string]struct{}{}
+
 	filepath.Walk(config.Atcoder.RepositoryPath, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() && strings.HasSuffix(path, config.Atcoder.KeyFileName) {
+		if !info.IsDir() && strings.HasSuffix(path, filepath.Join(config.Atcoder.DirectoryPath, config.Atcoder.KeyFileName)) {
 			fp, err := os.Open(path)
 			if err != nil {
 				log.Println(err)
@@ -468,7 +470,7 @@ func archiveCmd() {
 
 		// ex) tenkei90 cl -> 90
 		if contestID == "typical90" {
-			shortProblemID = string(toNumber(shortProblemID))
+			shortProblemID = strconv.Itoa(toNumber(shortProblemID))
 		}
 
 		epochSecond := s.EpochSecond
@@ -479,21 +481,17 @@ func archiveCmd() {
 				log.Print("Empty string...")
 				return
 			}
-			fileName := shortProblemID + languageExtension(language)
-			archiveDirPath := filepath.Join(config.Atcoder.RepositoryPath, contestID)
 
+			fileName := shortProblemID + languageExtension(language)
+			archiveDirPath := filepath.Join(config.Atcoder.RepositoryPath, config.Atcoder.DirectoryPath, contestID)
 			if err = archiveFile(code, fileName, archiveDirPath, s); err != nil {
 				log.Println("Fail to archive the code at", filepath.Join(archiveDirPath, fileName))
 				return
 			}
 			log.Println("archived the code at ", filepath.Join(archiveDirPath, fileName))
 
-			//If the archive repo is the git repo
-			if !isDirExist(filepath.Join(config.Atcoder.RepositoryPath, ".git")) {
-				return
-			}
-
-			filePath := filepath.Join(contestID, fileName)
+			filePath := filepath.Join(config.Atcoder.DirectoryPath, contestID, fileName)
+			fmt.Printf("%v\n", filePath)
 			message := fmt.Sprintf("[AC] %s %s", contestID, shortProblemID)
 			err = commit(config.Atcoder.RepositoryPath, filePath, userID, userEmail, message, epochSecond)
 
@@ -506,28 +504,30 @@ func archiveCmd() {
 			return
 		})
 
-		filePath := filepath.Join(config.Atcoder.RepositoryPath, config.Atcoder.KeyFileName)
-		file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-		if err != nil {
-			log.Println(err)
-		}
-		defer file.Close()
-
-		for i := range successFileName {
-			file.WriteString(successFileName[i] + "\n")
-		}
-
-		err = commit(config.Atcoder.RepositoryPath, config.Atcoder.KeyFileName, userID, userEmail, "Update a Key file", epochSecond)
-		if err != nil {
-			log.Println("Error: fail to commit a key file")
-			return
-		}
 	})
+
+	filePath := filepath.Join(config.Atcoder.RepositoryPath, config.Atcoder.KeyFileName)
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+	if err != nil {
+		log.Println(err)
+	}
+	defer file.Close()
+
+	for i := range successFileName {
+		file.WriteString(successFileName[i] + "\n")
+	}
+
+	filePath = filepath.Join(config.Atcoder.DirectoryPath, config.Atcoder.KeyFileName)
+	err = commit(config.Atcoder.RepositoryPath, filePath, config.Atcoder.UserID, config.Atcoder.UserEmail, "Update a Key file", time.Now().Unix())
+	if err != nil {
+		log.Println("Error: fail to commit a key file")
+		return
+	}
 }
 
-func commit(directoryPath, keyFileName, userID, userEmail, message string, epochSecond int64) error {
+func commit(repositoryPath, filePath, userID, userEmail, message string, epochSecond int64) error {
 
-	r, err := git.PlainOpen(directoryPath)
+	r, err := git.PlainOpen(repositoryPath)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -539,12 +539,13 @@ func commit(directoryPath, keyFileName, userID, userEmail, message string, epoch
 		return err
 	}
 
-	_, err = w.Add(filepath.Join(keyFileName))
+	_, err = w.Add(filePath)
 	if err != nil {
 		log.Println(err)
 		return err
 	}
 
+	log.Println(filepath.Join(repositoryPath, filePath))
 	_, err = w.Commit(message, &git.CommitOptions{
 		Author: &object.Signature{
 			Name:  userID,
