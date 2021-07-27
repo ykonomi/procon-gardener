@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -55,6 +56,7 @@ func isFileExist(path string) bool {
 
 type Service struct {
 	RepositoryPath string `json:"repository_path"`
+	KeyFileName    string `json:"key_file_name"`
 	UserID         string `json:"user_id"`
 	UserEmail      string `json:"user_email"`
 }
@@ -399,24 +401,30 @@ func archiveCmd() {
 	//skip the already archived code
 	archivedKeys := map[string]struct{}{}
 	filepath.Walk(config.Atcoder.RepositoryPath, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() && strings.HasSuffix(path, "submission.json") {
-			bytes, err := ioutil.ReadFile(path)
+		if !info.IsDir() && strings.HasSuffix(path, config.Atcoder.KeyFileName) {
+			fp, err := os.Open(path)
 			if err != nil {
 				log.Println(err)
 				return err
 			}
-			var submission AtCoderSubmission
-			if err = json.Unmarshal(bytes, &submission); err != nil {
-				log.Println(err)
-				return err
+			defer fp.Close()
+
+			// var submission AtCoderSubmission
+			// if err = json.Unmarshal(bytes, &submission); err != nil {
+			// 	log.Println(err)
+			// 	return err
+			// }
+			scanner := bufio.NewScanner(fp)
+			for scanner.Scan() {
+				archivedKeys[scanner.Text()] = struct{}{}
 			}
-			key := submission.ContestID + "_" + submission.ProblemID
-			archivedKeys[key] = struct{}{}
+			// key := submission.ContestID + "_" + submission.ProblemID
+			// archivedKeys[key] = struct{}{}
 		}
 		return nil
 	})
 	ss = funk.Filter(ss, func(s AtCoderSubmission) bool {
-		key := s.ContestID + "_" + s.ProblemID
+		key := s.ProblemID
 		_, ok := archivedKeys[key]
 		if ok {
 			return false
@@ -442,6 +450,8 @@ func archiveCmd() {
 
 	startTime := time.Now()
 	log.Printf("Archiving %d code...", len(ss))
+
+	successFileName := []string{}
 	funk.ForEach(ss, func(s AtCoderSubmission) {
 		url := fmt.Sprintf("https://atcoder.jp/contests/%s/submissions/%s", s.ContestID, strconv.Itoa(s.ID))
 
@@ -477,21 +487,22 @@ func archiveCmd() {
 		contestID := s.ContestID
 
 		// ex) abc002_a -> abc002 a
-		problemID := strings.Split(s.ProblemID, "_")[1]
+		shortProblemID := strings.Split(s.ProblemID, "_")[1]
 
 		// ex) tenkei90 cl -> 90
 		if contestID == "typical90" {
-			problemID = string(toNumber(problemID))
+			shortProblemID = string(toNumber(shortProblemID))
 		}
 
 		epochSecond := s.EpochSecond
+
 		doc.Find(".linenums").Each(func(i int, gs *goquery.Selection) {
 			code := gs.Text()
 			if code == "" {
 				log.Print("Empty string...")
 				return
 			}
-			fileName := problemID + languageExtension(language)
+			fileName := shortProblemID + languageExtension(language)
 			archiveDirPath := filepath.Join(config.Atcoder.RepositoryPath, contestID)
 
 			if err = archiveFile(code, fileName, archiveDirPath, s); err != nil {
@@ -505,24 +516,12 @@ func archiveCmd() {
 				return
 			}
 
-			r, err := git.PlainOpen(config.Atcoder.RepositoryPath)
-			if err != nil {
-				log.Println(err)
-				return
-			}
+			filePath := filepath.Join(contestID, fileName)
+			message := fmt.Sprintf("[AC] %s %s", contestID, shortProblemID)
+			err = commit(config.Atcoder.RepositoryPath, filePath, userID, userEmail, message, epochSecond)
 
-			w, err := r.Worktree()
 			if err != nil {
-				log.Println(err)
-				return
-			}
-			//add source code
-			fmt.Println(fileName)
-			dirPath := filepath.Join("atcoder.jp", contestID, problemID)
-			_, err = w.Add(filepath.Join(dirPath, fileName))
-			if err != nil {
-				log.Println(err)
-
+				log.Println("Error: fail to commit ", filePath)
 				return
 			}
 
@@ -533,21 +532,58 @@ func archiveCmd() {
 			// 	return
 			// }
 
-			message := fmt.Sprintf("[AC] %s %s", contestID, problemID)
-			_, err = w.Commit(message, &git.CommitOptions{
-				Author: &object.Signature{
-					Name:  userID,
-					Email: userEmail,
-					When:  time.Unix(epochSecond, 0),
-				},
-			})
-			if err != nil {
-				log.Println(err)
-				return
-			}
+			successFileName = append(successFileName, s.ProblemID)
 			return
 		})
+
+		filePath := filepath.Join(config.Atcoder.RepositoryPath, config.Atcoder.KeyFileName)
+		file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+		if err != nil {
+			log.Println(err)
+		}
+		defer file.Close()
+
+		for i := range successFileName {
+			file.WriteString(successFileName[i] + "\n")
+		}
+
+		err = commit(config.Atcoder.RepositoryPath, config.Atcoder.KeyFileName, userID, userEmail, "Update a Key file", epochSecond)
+		if err != nil {
+			log.Println("Error: fail to commit a key file")
+			return
+		}
 	})
+}
+
+func commit(directoryPath, keyFileName, userID, userEmail, message string, epochSecond int64) error {
+
+	r, err := git.PlainOpen(directoryPath)
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	w, err := r.Worktree()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	_, err = w.Add(filepath.Join(keyFileName))
+	if err != nil {
+		log.Println(err)
+		return err
+	}
+
+	_, err = w.Commit(message, &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  userID,
+			Email: userEmail,
+			When:  time.Unix(epochSecond, 0),
+		},
+	})
+
+	return nil
 }
 func validateConfig(config Config) bool {
 	//TODO check path
