@@ -62,186 +62,216 @@ type Config struct {
 	Atcoder Service `json:"atcoder"`
 }
 
-func languageToFileName(language string) string {
+func pow(a, x int) int {
+	r := 1
+	for x > 0 {
+		if x&1 == 1 {
+			r *= a
+		}
+		a *= a
+		x >>= 1
+	}
+	return r
+}
+
+// a -> 1, b -> 2,...,z -> 26
+// aa -> 27...
+func toNumber(s string) int {
+	power := pow(26, len(s)-1)
+
+	r := 0
+	for i := range s {
+		switch {
+		case 97 <= s[i] && s[i] <= 122:
+			r += power * int(s[i]-97+1)
+		}
+
+		power /= 26
+	}
+
+	return r
+}
+
+func languageExtension(language string) string {
 	//e.g C++14 (GCC 5.4.1)
 	//C++14
 	language = strings.Split(language, "(")[0]
 	//remove extra last whitespace
 	language = language[:len(language)-1]
 	if strings.HasPrefix(language, "C++") {
-		return "Main.cpp"
+		return ".cpp"
 	}
 	if strings.HasPrefix(language, "Bash") {
-		return "Main.sh"
+		return ".sh"
 	}
 
 	//C (GCC 5.4.1)
 	//C (Clang 3.8.0)
 	if language == "C" {
-		return "Main.c"
+		return ".c"
 	}
 
 	if language == "C#" {
-		return "Main.cs"
+		return ".cs"
 	}
 
 	if language == "Clojure" {
-		return "Main.clj"
+		return ".clj"
 	}
 
 	if strings.HasPrefix(language, "Common Lisp") {
-		return "Main.lisp"
+		return ".lisp"
 	}
 
 	//D (DMD64 v2.070.1)
 	if language == "D" {
-		return "Main.d"
+		return ".d"
 	}
 
 	if language == "Fortran" {
-		return "Main.f08"
+		return ".f08"
 	}
 
 	if language == "Go" {
-		return "Main.go"
+		return ".go"
 	}
 
 	if language == "Haskell" {
-		return "Main.hs"
+		return ".hs"
 	}
 
 	if language == "JavaScript" {
-		return "Main.js"
+		return ".js"
 	}
 	if language == "Java" {
-		return "Main.java"
+		return ".java"
 	}
 	if language == "OCaml" {
-		return "Main.ml"
+		return ".ml"
 	}
 
 	if language == "Pascal" {
-		return "Main.pas"
+		return ".pas"
 	}
 
 	if language == "Perl" {
-		return "Main.pl"
+		return ".pl"
 	}
 
 	if language == "PHP" {
-		return "Main.php"
+		return ".php"
 	}
 
 	if strings.HasPrefix(language, "Python") {
-		return "Main.py"
+		return ".py"
 	}
 
 	if language == "Ruby" {
-		return "Main.rb"
+		return ".rb"
 	}
 
 	if language == "Scala" {
-		return "Main.scala"
+		return ".scala"
 	}
 
 	if language == "Scheme" {
-		return "Main.scm"
+		return ".scm"
 	}
 
 	if language == "Main.txt" {
-		return "Main.txt"
+		return ".txt"
 	}
 
 	if language == "Visual Basic" {
-		return "Main.vb"
+		return ".vb"
 	}
 
 	if language == "Objective-C" {
-		return "Main.m"
+		return ".m"
 	}
 
 	if language == "Swift" {
-		return "Main.swift"
+		return ".swift"
 	}
 
 	if language == "Rust" {
-		return "Main.rs"
+		return ".rs"
 	}
 
 	if language == "Sed" {
-		return "Main.sed"
+		return ".sed"
 	}
 
 	if language == "Awk" {
-		return "Main.awk"
+		return ".awk"
 	}
 
 	if language == "Brainfuck" {
-		return "Main.bf"
+		return ".bf"
 	}
 
 	if language == "Standard ML" {
-		return "Main.sml"
+		return ".sml"
 	}
 
 	if strings.HasPrefix(language, "PyPy") {
-		return "Main.py"
+		return ".py"
 	}
 
 	if language == "Crystal" {
-		return "Main.cr"
+		return ".cr"
 	}
 
 	if language == "F#" {
-		return "Main.fs"
+		return ".fs"
 	}
 
 	if language == "Unlambda" {
-		return "Main.unl"
+		return ".unl"
 	}
 
 	if language == "Lua" {
-		return "Main.lua"
+		return ".lua"
 	}
 
 	if language == "LuaJIT" {
-		return "Main.lua"
+		return ".lua"
 	}
 
 	if language == "MoonScript" {
-		return "Main.moon"
+		return ".moon"
 	}
 
 	if language == "Ceylon" {
-		return "Main.ceylon"
+		return ".ceylon"
 	}
 
 	if language == "Julia" {
-		return "Main.jl"
+		return ".jl"
 	}
 
 	if language == "Octave" {
-		return "Main.m"
+		return ".m"
 	}
 
 	if language == "Nim" {
-		return "Main.nim"
+		return ".nim"
 	}
 
 	if language == "TypeScript" {
-		return "Main.ts"
+		return ".ts"
 	}
 
 	if language == "Perl6" {
-		return "Main.p6"
+		return ".p6"
 	}
 
 	if language == "Kotlin" {
-		return "Main.kt"
+		return ".kt"
 	}
 
 	if language == "COBOL" {
-		return "Main.cob"
+		return ".cob"
 	}
 
 	log.Printf("Unknown ... %s", language)
@@ -422,7 +452,13 @@ func archiveCmd() {
 			time.Sleep(time.Millisecond * sleepTime)
 		}
 		resp, err := http.Get(url)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
 		defer resp.Body.Close()
+
 		startTime = time.Now()
 		if err != nil {
 			log.Println(err)
@@ -437,8 +473,17 @@ func archiveCmd() {
 		userID := s.UserID
 		userEmail := config.Atcoder.UserEmail
 		language := s.Language
+
 		contestID := s.ContestID
-		problemID := s.ProblemID
+
+		// ex) abc002_a -> abc002 a
+		problemID := strings.Split(s.ProblemID, "_")[1]
+
+		// ex) tenkei90 cl -> 90
+		if contestID == "typical90" {
+			problemID = string(toNumber(problemID))
+		}
+
 		epochSecond := s.EpochSecond
 		doc.Find(".linenums").Each(func(i int, gs *goquery.Selection) {
 			code := gs.Text()
@@ -446,8 +491,8 @@ func archiveCmd() {
 				log.Print("Empty string...")
 				return
 			}
-			fileName := languageToFileName(language)
-			archiveDirPath := filepath.Join(config.Atcoder.RepositoryPath, "atcoder.jp", contestID, problemID)
+			fileName := problemID + languageExtension(language)
+			archiveDirPath := filepath.Join(config.Atcoder.RepositoryPath, contestID)
 
 			if err = archiveFile(code, fileName, archiveDirPath, s); err != nil {
 				log.Println("Fail to archive the code at", filepath.Join(archiveDirPath, fileName))
