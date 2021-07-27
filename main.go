@@ -351,21 +351,6 @@ func archiveFile(code, fileName, path string, submission AtCoderSubmission) erro
 	}
 	defer file.Close()
 	file.WriteString(code)
-
-	// {
-	// 	 [no use] save submission json file
-	// 	 jsonBytes, err := json.MarshalIndent(submission, "", "\t")
-	// 	 if err != nil {
-	// 	 	log.Println(err)
-	// 	 }
-	// 	 json := string(jsonBytes)
-	// 	 file, err := os.Create(filepath.Join(path, "submission.json"))
-	// 	 if err != nil {
-	// 	 	log.Println(err)
-	// 	 }
-	// 	 defer file.Close()
-	// 	 file.WriteString(json)
-	// }
 	return nil
 }
 
@@ -408,18 +393,10 @@ func archiveCmd() {
 				return err
 			}
 			defer fp.Close()
-
-			// var submission AtCoderSubmission
-			// if err = json.Unmarshal(bytes, &submission); err != nil {
-			// 	log.Println(err)
-			// 	return err
-			// }
 			scanner := bufio.NewScanner(fp)
 			for scanner.Scan() {
 				archivedKeys[scanner.Text()] = struct{}{}
 			}
-			// key := submission.ContestID + "_" + submission.ProblemID
-			// archivedKeys[key] = struct{}{}
 		}
 		return nil
 	})
@@ -510,8 +487,8 @@ func archiveCmd() {
 				return
 			}
 			log.Println("archived the code at ", filepath.Join(archiveDirPath, fileName))
+
 			//If the archive repo is the git repo
-			//git add and git commit
 			if !isDirExist(filepath.Join(config.Atcoder.RepositoryPath, ".git")) {
 				return
 			}
@@ -524,13 +501,6 @@ func archiveCmd() {
 				log.Println("Error: fail to commit ", filePath)
 				return
 			}
-
-			// [no use] add submission json
-			// _, err = w.Add(filepath.Join(dirPath, "submission.json"))
-			// if err != nil {
-			// 	log.Println(err)
-			// 	return
-			// }
 
 			successFileName = append(successFileName, s.ProblemID)
 			return
