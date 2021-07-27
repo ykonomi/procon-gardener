@@ -1,4 +1,4 @@
-module github.com/ykonomi/procon-gardener
+module github.com/ykonomi/procon-gardener/v0.1
 
 go 1.15
 
