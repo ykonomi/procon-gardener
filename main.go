@@ -320,20 +320,20 @@ func archiveFile(code, fileName, path string, submission AtCoderSubmission) erro
 	defer file.Close()
 	file.WriteString(code)
 
-	{
-		//save submission json file
-		jsonBytes, err := json.MarshalIndent(submission, "", "\t")
-		if err != nil {
-			log.Println(err)
-		}
-		json := string(jsonBytes)
-		file, err := os.Create(filepath.Join(path, "submission.json"))
-		if err != nil {
-			log.Println(err)
-		}
-		defer file.Close()
-		file.WriteString(json)
-	}
+	// {
+	// 	 [no use] save submission json file
+	// 	 jsonBytes, err := json.MarshalIndent(submission, "", "\t")
+	// 	 if err != nil {
+	// 	 	log.Println(err)
+	// 	 }
+	// 	 json := string(jsonBytes)
+	// 	 file, err := os.Create(filepath.Join(path, "submission.json"))
+	// 	 if err != nil {
+	// 	 	log.Println(err)
+	// 	 }
+	// 	 defer file.Close()
+	// 	 file.WriteString(json)
+	// }
 	return nil
 }
 
@@ -481,12 +481,12 @@ func archiveCmd() {
 				return
 			}
 
-			//add submission json
-			_, err = w.Add(filepath.Join(dirPath, "submission.json"))
-			if err != nil {
-				log.Println(err)
-				return
-			}
+			// [no use] add submission json
+			// _, err = w.Add(filepath.Join(dirPath, "submission.json"))
+			// if err != nil {
+			// 	log.Println(err)
+			// 	return
+			// }
 
 			message := fmt.Sprintf("[AC] %s %s", contestID, problemID)
 			_, err = w.Commit(message, &git.CommitOptions{
