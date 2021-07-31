@@ -278,7 +278,7 @@ func languageExtension(language string) string {
 	}
 
 	log.Printf("Unknown ... %s", language)
-	return "Main.txt"
+	return ""
 }
 
 func initCmd(strict bool) {
@@ -341,17 +341,27 @@ func loadConfig() (*Config, error) {
 	return &config, nil
 }
 
-func archiveFile(code, fileName, path string, submission AtCoderSubmission) error {
-	if err := os.MkdirAll(path, 0700); err != nil {
+func archiveFile(config *Config, code, filePath string) error {
+	abstPath := filepath.Join(config.Atcoder.RepositoryPath, filePath)
+	dirPath, _ := filepath.Split(abstPath)
+
+	if err := os.MkdirAll(dirPath, 0700); err != nil {
+		log.Fatal(err)
 		return err
 	}
-	filePath := filepath.Join(path, fileName)
-	file, err := os.Create(filePath)
+
+	file, err := os.OpenFile(abstPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
+		log.Fatal(err)
 		return err
 	}
 	defer file.Close()
-	file.WriteString(code)
+
+	if _, err := file.WriteString(code); err != nil {
+		log.Fatal(err)
+		return err
+	}
+
 	return nil
 }
 
@@ -489,66 +499,31 @@ func archiveCmd() {
 		log.Println(err)
 		return
 	}
-	var ss []AtCoderSubmission
-	err = json.Unmarshal(bytes, &ss)
+	var submissions []AtCoderSubmission
+	err = json.Unmarshal(bytes, &submissions)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	archivedKeys, err := loadArchivedProgramId(config)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
 	//only ac
-	ss = funk.Filter(ss, func(s AtCoderSubmission) bool {
-		return s.Result == "AC"
-	}).([]AtCoderSubmission)
-
+	submissions = extractAc(submissions)
 	//skip the already archived code
-	archivedKeys := map[string]struct{}{}
-
-	filepath.Walk(config.Atcoder.RepositoryPath, func(path string, info os.FileInfo, err error) error {
-		if !info.IsDir() && strings.HasSuffix(path, filepath.Join(config.Atcoder.DirectoryPath, config.Atcoder.KeyFileName)) {
-			fp, err := os.Open(path)
-			if err != nil {
-				log.Println(err)
-				return err
-			}
-			defer fp.Close()
-			scanner := bufio.NewScanner(fp)
-			for scanner.Scan() {
-				archivedKeys[scanner.Text()] = struct{}{}
-			}
-		}
-		return nil
-	})
-	ss = funk.Filter(ss, func(s AtCoderSubmission) bool {
-		key := s.ProblemID
-		_, ok := archivedKeys[key]
-		if ok {
-			return false
-		}
-		return true
-	}).([]AtCoderSubmission)
-
-	//rev sort by EpochSecond
-	sort.Slice(ss, func(i, j int) bool {
-		return ss[i].EpochSecond > ss[j].EpochSecond
-	})
-
-	//filter latest submission for each problem
-	v := map[string]struct{}{}
-	ss = funk.Filter(ss, func(s AtCoderSubmission) bool {
-		_, ok := v[s.ContestID+"_"+s.ProblemID]
-		if ok {
-			return false
-		}
-		v[s.ContestID+"_"+s.ProblemID] = struct{}{}
-		return true
-	}).([]AtCoderSubmission)
+	submissions = extractUnArchivedSubmission(submissions, archivedKeys)
+	// filter latest submission for each problem
+	submissions = extractLatestSubmissionsPerSubmission(submissions)
 
 	startTime := time.Now()
-	log.Printf("Archiving %d code...", len(ss))
+	log.Printf("Archiving %d code...", len(submissions))
 
 	successFileName := []string{}
-	funk.ForEach(ss, func(s AtCoderSubmission) {
+	funk.ForEach(submissions, func(s AtCoderSubmission) {
 		url := fmt.Sprintf("https://atcoder.jp/contests/%s/submissions/%s", s.ContestID, strconv.Itoa(s.ID))
 
 		//log.Printf("Requesting... %s", url)
@@ -576,21 +551,20 @@ func archiveCmd() {
 			log.Println(err)
 			return
 		}
-		userID := s.UserID
-		userEmail := config.Atcoder.UserEmail
+
 		language := s.Language
-
-		contestID := s.ContestID
-
+		epochSecond := s.EpochSecond
 		// ex) abc002_a -> abc002 a
-		shortProblemID := strings.Split(s.ProblemID, "_")[1]
-
+		contestId := strings.Split(s.ProblemID, "_")[0]
+		programName := strings.Split(s.ProblemID, "_")[1]
 		// ex) tenkei90 cl -> 90
-		if contestID == "typical90" {
-			shortProblemID = strconv.Itoa(toNumber(shortProblemID))
+		if contestId == "typical90" {
+			programName = strconv.Itoa(toNumber(programName))
 		}
 
-		epochSecond := s.EpochSecond
+		fileName := programName + languageExtension(language)
+		filePath := filepath.Join(config.Atcoder.DirectoryPath, contestId, fileName)
+		message := fmt.Sprintf("[AC] %s %s", contestId, programName)
 
 		doc.Find(".linenums").Each(func(i int, gs *goquery.Selection) {
 			code := gs.Text()
@@ -599,19 +573,13 @@ func archiveCmd() {
 				return
 			}
 
-			fileName := shortProblemID + languageExtension(language)
-			archiveDirPath := filepath.Join(config.Atcoder.RepositoryPath, config.Atcoder.DirectoryPath, contestID)
-			if err = archiveFile(code, fileName, archiveDirPath, s); err != nil {
-				log.Println("Fail to archive the code at", filepath.Join(archiveDirPath, fileName))
+			if err = archiveFile(config, code, filePath); err != nil {
+				log.Println("Fail to archive the code at", filePath)
 				return
 			}
-			log.Println("archived the code at ", filepath.Join(archiveDirPath, fileName))
+			fmt.Println("archived the code at ", filePath)
 
-			filePath := filepath.Join(config.Atcoder.DirectoryPath, contestID, fileName)
-			message := fmt.Sprintf("[AC] %s %s", contestID, shortProblemID)
-			err = commit(config.Atcoder.RepositoryPath, filePath, userID, userEmail, message, epochSecond)
-
-			if err != nil {
+			if err := commit(config, filePath, message, epochSecond); err != nil {
 				log.Println("Error: fail to commit ", filePath)
 				return
 			}
@@ -622,28 +590,25 @@ func archiveCmd() {
 
 	})
 
-	filePath := filepath.Join(config.Atcoder.RepositoryPath, config.Atcoder.KeyFileName)
-	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-	if err != nil {
-		log.Println(err)
-	}
-	defer file.Close()
-
+	filePath := filepath.Join(config.Atcoder.DirectoryPath, config.Atcoder.KeyFileName)
+	tmp := ""
 	for i := range successFileName {
-		file.WriteString(successFileName[i] + "\n")
+		tmp += successFileName[i] + "\n"
+	}
+	if err = archiveFile(config, tmp, filePath); err != nil {
+		log.Println("Fail to archive the code at", filePath)
+		return
 	}
 
-	filePath = filepath.Join(config.Atcoder.DirectoryPath, config.Atcoder.KeyFileName)
-	err = commit(config.Atcoder.RepositoryPath, filePath, config.Atcoder.UserID, config.Atcoder.UserEmail, "Update a Key file", time.Now().Unix())
-	if err != nil {
+	if err := commit(config, filePath, "Update a Key file", time.Now().Unix()); err != nil {
 		log.Println("Error: fail to commit a key file")
 		return
 	}
+
 }
 
-func commit(repositoryPath, filePath, userID, userEmail, message string, epochSecond int64) error {
-
-	r, err := git.PlainOpen(repositoryPath)
+func commit(config *Config, filePath, message string, epochSecond int64) error {
+	r, err := git.PlainOpen(config.Atcoder.RepositoryPath)
 	if err != nil {
 		log.Println(err)
 		return err
@@ -655,27 +620,32 @@ func commit(repositoryPath, filePath, userID, userEmail, message string, epochSe
 		return err
 	}
 
-	_, err = w.Add(filePath)
-	if err != nil {
+	if _, err := w.Add(filePath); err != nil {
 		log.Println(err)
 		return err
 	}
 
-	log.Println(filepath.Join(repositoryPath, filePath))
-	_, err = w.Commit(message, &git.CommitOptions{
+	if _, err := w.Commit(message, &git.CommitOptions{
 		Author: &object.Signature{
-			Name:  userID,
-			Email: userEmail,
+			Name:  config.Atcoder.UserID,
+			Email: config.Atcoder.UserEmail,
 			When:  time.Unix(epochSecond, 0),
 		},
-	})
+	}); err != nil {
+		log.Println(err)
+		return err
+	}
+
+	fmt.Println("commited the code at ", filePath)
 
 	return nil
 }
+
 func validateConfig(config Config) bool {
 	//TODO check path
 	return false
 }
+
 func editCmd() {
 
 	home, err := homedir.Dir()
