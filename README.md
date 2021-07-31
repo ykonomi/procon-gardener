@@ -1,12 +1,50 @@
 # procon-gardener
 
 ### 概要
-提出したACしたコードを自動的に取得してローカルのディレクトリに保存するコマンドラインツールです。
+提出したACしたコードを自動的に取得してローカルのgitレポジトリに保存してコミットするコマンドラインツールです。
+
+### togatoga/procon-gardener との相違点
+
+- 保存されるディレクトリパスの変更しました
+  - 元: {repository_path}/atcoder.jp/abc133/abc133_d/Main.rs
+  - これ: {repository_path}/{directory_path}/abc133/d.rs
+
+- 典型90の問題に対応しました
+  - 典型90の問題は元のまま実行すると typical90_cl と後半が26進数であるため, 10進数に直しています
+
+- submission.json を一つのファイルにまとめました
+  - submission.json が現状重複チェックにしか使われておらず, ファイルがかさばるためです
+  - ファイルの中身は保存済みのプログラムIDのリストです
+  - (未実装) 将来的には, なくす予定です
+
+- 設定ファイルの項目の追加
+  - directory_path: 保存先のディレクトリを指定できるようにしました
+  - key_file_name: 重複チェック用のファイルのファイル名です. directory_path直下に保存されます
+  - (未実装) github_user_id: 現状, atcoderのuserID でコミットされるため, 指定できるようにしたい
+
+```
+{
+	"atcoder": {
+		"repository_path": "", 
+		"directory_path": "atcoder_contest",
+		"key_file_name": "key_file.txt",
+		"user_id": "",
+		"user_email": ""
+	}
+}
+```
+
+- 試運転(Dry Run) の追加
+  - 保存される問題のリストが表示されます
+  - ABC, ARCが混在されて時代に対応して, 注意書きを表示するようにしています
+    - 提出がABCであっても, プログラムIDがARCのものなら, ARCのディレクトリを作って保存されます
+
 
 ### インストール方法
-インストールするにはGoが必要です。
+インストールするには[Go](https://golang.org/doc/install)が必要です。
+
 ```
-go get github.com/togatoga/procon-gardener
+go get github.com/ykonomi/procon-gardener
 ```
 
 ### サポート環境
@@ -123,5 +161,7 @@ Date:   Fri Mar 20 06:30:19 2020 +0900
 
 ```
 
-### 不具合等
-バグ修正等はGitHubのissueもしくは@togatoga_まで連絡ください。
+### 不具合があったら
+
+GitHubのissue へ
+
