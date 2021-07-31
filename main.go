@@ -355,6 +355,123 @@ func archiveFile(code, fileName, path string, submission AtCoderSubmission) erro
 	return nil
 }
 
+// in-place に詰め直す
+func extractLatestSubmissionsPerSubmission(s []AtCoderSubmission) []AtCoderSubmission {
+	sort.Slice(s, func(i, j int) bool {
+		return s[i].EpochSecond > s[j].EpochSecond
+	})
+
+	r := s[:0]
+	set := map[string]struct{}{}
+
+	for i := range s {
+		tmp := s[i]
+		key := tmp.ContestID + "_" + tmp.ProblemID
+
+		_, ok := set[key]
+		if ok {
+			continue
+		}
+
+		set[key] = struct{}{}
+		r = append(r, tmp)
+	}
+	return r
+
+}
+
+func extractUnArchivedSubmission(s []AtCoderSubmission, archivedKeys map[string]struct{}) []AtCoderSubmission {
+	r := s[:0]
+
+	for i := range s {
+		tmp := s[i]
+		_, ok := archivedKeys[tmp.ProblemID]
+		if !ok {
+			r = append(r, tmp)
+		}
+	}
+	return r
+}
+
+func extractAc(s []AtCoderSubmission) []AtCoderSubmission {
+	r := s[:0]
+
+	for i := range s {
+		tmp := s[i]
+		if tmp.Result == "AC" {
+			r = append(r, tmp)
+		}
+	}
+
+	return r
+}
+
+func loadArchivedProgramId(c *Config) (map[string]struct{}, error) {
+	r := map[string]struct{}{}
+	fp, err := os.Open(filepath.Join(c.Atcoder.RepositoryPath, c.Atcoder.DirectoryPath, c.Atcoder.KeyFileName))
+	if err != nil {
+		log.Println(err)
+		return r, err
+	}
+	defer fp.Close()
+	scanner := bufio.NewScanner(fp)
+	for scanner.Scan() {
+		r[scanner.Text()] = struct{}{}
+	}
+
+	return r, nil
+}
+
+func dryRunCmd() {
+	config, err := loadConfig()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	resp, err := http.Get(ATCODER_API_SUBMISSION_URL + config.Atcoder.UserID)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer resp.Body.Close()
+	bytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	var submissions []AtCoderSubmission
+	err = json.Unmarshal(bytes, &submissions)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	archivedKeys, err := loadArchivedProgramId(config)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	//only ac
+	submissions = extractAc(submissions)
+	//skip the already archived code
+	submissions = extractUnArchivedSubmission(submissions, archivedKeys)
+	// filter latest submission for each problem
+	submissions = extractLatestSubmissionsPerSubmission(submissions)
+
+	for i := range submissions {
+		fmt.Printf("%v\n", submissions[i])
+	}
+
+	for i := range submissions {
+		tmp := strings.Split(submissions[i].ProblemID, "_")
+		if tmp[0] != submissions[i].ContestID {
+			fmt.Printf("info: a part of %v problems are saved in %v \n", submissions[i].ContestID, tmp[0])
+		}
+	}
+
+}
+
 func archiveCmd() {
 	config, err := loadConfig()
 	if err != nil {
@@ -491,7 +608,6 @@ func archiveCmd() {
 			log.Println("archived the code at ", filepath.Join(archiveDirPath, fileName))
 
 			filePath := filepath.Join(config.Atcoder.DirectoryPath, contestID, fileName)
-			fmt.Printf("%v\n", filePath)
 			message := fmt.Sprintf("[AC] %s %s", contestID, shortProblemID)
 			err = commit(config.Atcoder.RepositoryPath, filePath, userID, userEmail, message, epochSecond)
 
@@ -591,6 +707,15 @@ func main() {
 	app := cli.App{Name: "procon-gardener", Usage: "archive your AC submissions",
 		Commands: []*cli.Command{
 			{
+				Name:    "init",
+				Aliases: []string{"i"},
+				Usage:   "initialize your config",
+				Action: func(c *cli.Context) error {
+					initCmd(true)
+					return nil
+				},
+			},
+			{
 				Name:    "archive",
 				Aliases: []string{"a"},
 				Usage:   "archive your AC submissions",
@@ -600,11 +725,11 @@ func main() {
 				},
 			},
 			{
-				Name:    "init",
-				Aliases: []string{"i"},
-				Usage:   "initialize your config",
+				Name:    "dry-run",
+				Aliases: []string{"d"},
+				Usage:   "list your AC commmit.",
 				Action: func(c *cli.Context) error {
-					initCmd(true)
+					dryRunCmd()
 					return nil
 				},
 			},
